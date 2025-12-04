@@ -154,29 +154,32 @@ bool PassesFilters(double atr)
          return false;
    }
 
-   // Spread filter in points
+   // Get spread and point size
    int spreadPoints = (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   double spreadValue = spreadPoints * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
 
+   // Simple spread filter
    if(InpMaxSpreadPoints > 0 && spreadPoints > InpMaxSpreadPoints)
    {
-      Print("Spread too high: ", spreadPoints, " points");
+      Print("Spread too high: ", spreadPoints, " points (max: ", InpMaxSpreadPoints, ")");
       return false;
    }
 
-   // Spread to expected move ratio
+   // Spread to expected move ratio (both converted to points for comparison)
    if(InpSpreadToMoveRatio > 0)
    {
-      double expectedMove = atr * InpBreakoutMultiplier;
-      double ratio = spreadValue / expectedMove;
+      // Convert ATR to points
+      double atrInPoints = atr / point;
+      double expectedMovePoints = atrInPoints * InpBreakoutMultiplier;
+      double ratio = spreadPoints / expectedMovePoints;
 
       if(ratio > InpSpreadToMoveRatio)
       {
          Print("Spread/Move ratio too high: ", DoubleToString(ratio, 3),
-               " | Spread: ", spreadPoints, " points (", DoubleToString(spreadValue, _Digits), ")",
-               " | ATR: ", DoubleToString(atr, _Digits),
-               " | Expected move (ATR*", InpBreakoutMultiplier, "): ", DoubleToString(expectedMove, _Digits),
-               " | Ratio: ", DoubleToString(ratio * 100, 1), "%");
+               " | Spread: ", spreadPoints, " points",
+               " | ATR: ", DoubleToString(atrInPoints, 1), " points (", DoubleToString(atr, _Digits), ")",
+               " | Expected move: ", DoubleToString(expectedMovePoints, 1), " points",
+               " | Ratio: ", DoubleToString(ratio * 100, 1), "% (max: ", DoubleToString(InpSpreadToMoveRatio * 100, 1), "%)");
          return false;
       }
    }
