@@ -10,10 +10,12 @@
 
 //--- Input Parameters
 input group "=== Momentum Detection ==="
+input bool InpRequireConsolidation = false;    // Require consolidation before breakout
 input int InpConsolidationBars = 20;           // Bars for consolidation detection
 input double InpBreakoutMultiplier = 2.0;      // ATR multiplier for breakout
 input int InpATRPeriod = 14;                   // ATR Period
 input double InpMinMomentumCandle = 1.5;       // Min candle size (ATR multiplier)
+input double InpBodyRatioMin = 0.6;            // Min body ratio (0.6 = 60% body)
 
 input group "=== Risk Management ==="
 input double InpRiskPercent = 1.0;             // Risk per trade (%)
@@ -234,11 +236,29 @@ bool IsConsolidating(double atr, double &rangeHigh, double &rangeLow)
 //+------------------------------------------------------------------+
 void CheckForBreakout(double atr)
 {
-   double rangeHigh, rangeLow;
+   double rangeHigh = 0, rangeLow = 0;
+   bool inConsolidation = false;
 
-   // First check if we were in consolidation
-   if(!IsConsolidating(atr, rangeHigh, rangeLow))
-      return;
+   // Check consolidation only if required
+   if(InpRequireConsolidation)
+   {
+      if(!IsConsolidating(atr, rangeHigh, rangeLow))
+         return;
+      inConsolidation = true;
+   }
+   else
+   {
+      // Get recent range for reference
+      rangeHigh = iHigh(_Symbol, PERIOD_CURRENT, 1);
+      rangeLow = iLow(_Symbol, PERIOD_CURRENT, 1);
+      for(int i = 2; i <= 5; i++)
+      {
+         double high = iHigh(_Symbol, PERIOD_CURRENT, i);
+         double low = iLow(_Symbol, PERIOD_CURRENT, i);
+         if(high > rangeHigh) rangeHigh = high;
+         if(low < rangeLow) rangeLow = low;
+      }
+   }
 
    // Get current completed candle
    double open = iOpen(_Symbol, PERIOD_CURRENT, 1);
@@ -254,9 +274,15 @@ void CheckForBreakout(double atr)
    double minCandleSize = atr * InpMinMomentumCandle;
    if(candleSize < minCandleSize)
    {
-      Print("Consolidation found but candle too small: ", DoubleToString(candleSize / point, 1), " points",
-            " | Required: ", DoubleToString(minCandleSize / point, 1), " points (",
-            InpMinMomentumCandle, "x ATR)");
+      static int smallCandleCounter = 0;
+      smallCandleCounter++;
+      if(smallCandleCounter >= 20)
+      {
+         Print("Candle too small: ", DoubleToString(candleSize / point, 1), " points",
+               " | Required: ", DoubleToString(minCandleSize / point, 1), " points (",
+               InpMinMomentumCandle, "x ATR)");
+         smallCandleCounter = 0;
+      }
       return;
    }
 
@@ -276,48 +302,53 @@ void CheckForBreakout(double atr)
       }
    }
 
-   // Bullish breakout
-   if(close > open && close > rangeHigh)
+   // Check body ratio
+   double bodyRatio = candleRange > 0 ? candleSize / candleRange : 0;
+
+   // Bullish momentum (strong up candle)
+   if(close > open)
    {
-      // Check candle quality (small wicks = institutional move)
-      double bodyRatio = candleSize / candleRange;
-      if(bodyRatio > 0.6) // At least 60% body
+      bool breakoutCondition = InpRequireConsolidation ? (close > rangeHigh) : true;
+
+      if(breakoutCondition)
       {
-         Print("=== BULLISH BREAKOUT DETECTED ===");
-         Print("Close: ", close, " | Range high: ", rangeHigh, " | Body ratio: ", DoubleToString(bodyRatio * 100, 1), "%");
-         OpenTrade(ORDER_TYPE_BUY, atr);
-      }
-      else
-      {
-         Print("Bullish breakout but body ratio too low: ", DoubleToString(bodyRatio * 100, 1), "% (need >60%)");
+         if(bodyRatio >= InpBodyRatioMin)
+         {
+            Print("=== BULLISH MOMENTUM DETECTED ===");
+            Print("Candle: ", DoubleToString(candleSize / point, 1), " points",
+                  " | ATR: ", DoubleToString(atr / point, 1), " points",
+                  " | Body ratio: ", DoubleToString(bodyRatio * 100, 1), "%",
+                  " | Breakout: ", (close > rangeHigh ? "YES" : "N/A"));
+            OpenTrade(ORDER_TYPE_BUY, atr);
+         }
+         else
+         {
+            Print("Bullish momentum but body ratio too low: ", DoubleToString(bodyRatio * 100, 1),
+                  "% (need >=", DoubleToString(InpBodyRatioMin * 100, 0), "%)");
+         }
       }
    }
-   // Bearish breakout
-   else if(close < open && close < rangeLow)
+   // Bearish momentum (strong down candle)
+   else if(close < open)
    {
-      double bodyRatio = candleSize / candleRange;
-      if(bodyRatio > 0.6)
+      bool breakoutCondition = InpRequireConsolidation ? (close < rangeLow) : true;
+
+      if(breakoutCondition)
       {
-         Print("=== BEARISH BREAKOUT DETECTED ===");
-         Print("Close: ", close, " | Range low: ", rangeLow, " | Body ratio: ", DoubleToString(bodyRatio * 100, 1), "%");
-         OpenTrade(ORDER_TYPE_SELL, atr);
-      }
-      else
-      {
-         Print("Bearish breakout but body ratio too low: ", DoubleToString(bodyRatio * 100, 1), "% (need >60%)");
-      }
-   }
-   else
-   {
-      // Debug: why no breakout?
-      static int noBreakoutCounter = 0;
-      noBreakoutCounter++;
-      if(noBreakoutCounter >= 5)
-      {
-         Print("Strong candle in consolidation but no breakout: Close=", close,
-               " | RangeHigh=", rangeHigh, " | RangeLow=", rangeLow,
-               " | Direction=", (close > open ? "Bullish" : "Bearish"));
-         noBreakoutCounter = 0;
+         if(bodyRatio >= InpBodyRatioMin)
+         {
+            Print("=== BEARISH MOMENTUM DETECTED ===");
+            Print("Candle: ", DoubleToString(candleSize / point, 1), " points",
+                  " | ATR: ", DoubleToString(atr / point, 1), " points",
+                  " | Body ratio: ", DoubleToString(bodyRatio * 100, 1), "%",
+                  " | Breakout: ", (close < rangeLow ? "YES" : "N/A"));
+            OpenTrade(ORDER_TYPE_SELL, atr);
+         }
+         else
+         {
+            Print("Bearish momentum but body ratio too low: ", DoubleToString(bodyRatio * 100, 1),
+                  "% (need >=", DoubleToString(InpBodyRatioMin * 100, 0), "%)");
+         }
       }
    }
 }
