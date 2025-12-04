@@ -93,7 +93,10 @@ void OnTick()
 
    double currentATR = atrBuffer[0];
    if(currentATR <= 0)
+   {
+      Print("ATR is zero or negative: ", currentATR);
       return;
+   }
 
    // Check if we have an open position
    if(PositionSelect(_Symbol))
@@ -104,6 +107,16 @@ void OnTick()
 
    // Reset trade counter if no position
    barsInTrade = 0;
+
+   // Debug: Print ATR value once per hour
+   static datetime lastDebugTime = 0;
+   if(TimeCurrent() - lastDebugTime > 3600)
+   {
+      Print("Current ATR: ", DoubleToString(currentATR, _Digits),
+            " | Symbol Point: ", SymbolInfoDouble(_Symbol, SYMBOL_POINT),
+            " | Spread: ", SymbolInfoInteger(_Symbol, SYMBOL_SPREAD), " points");
+      lastDebugTime = TimeCurrent();
+   }
 
    // Apply filters
    if(!PassesFilters(currentATR))
@@ -160,8 +173,10 @@ bool PassesFilters(double atr)
       if(ratio > InpSpreadToMoveRatio)
       {
          Print("Spread/Move ratio too high: ", DoubleToString(ratio, 3),
-               " (Spread: ", spreadPoints, " points, Expected move: ",
-               DoubleToString(expectedMove, _Digits), ")");
+               " | Spread: ", spreadPoints, " points (", DoubleToString(spreadValue, _Digits), ")",
+               " | ATR: ", DoubleToString(atr, _Digits),
+               " | Expected move (ATR*", InpBreakoutMultiplier, "): ", DoubleToString(expectedMove, _Digits),
+               " | Ratio: ", DoubleToString(ratio * 100, 1), "%");
          return false;
       }
    }
