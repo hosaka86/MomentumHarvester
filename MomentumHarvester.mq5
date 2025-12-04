@@ -210,12 +210,23 @@ bool IsConsolidating(double atr, double &rangeHigh, double &rangeLow)
 
    double rangeSize = rangeHigh - rangeLow;
    double avgATR = atrBuffer[1]; // Previous ATR
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
 
    // Consolidation if range is smaller than normal volatility
-   if(rangeSize < avgATR * InpBreakoutMultiplier)
-      return true;
+   bool isConsolidating = (rangeSize < avgATR * InpBreakoutMultiplier);
 
-   return false;
+   // Debug output every 10 bars
+   static int debugCounter = 0;
+   debugCounter++;
+   if(debugCounter >= 10)
+   {
+      Print("Consolidation check: Range=", DoubleToString(rangeSize / point, 1), " points",
+            " | Threshold=", DoubleToString((avgATR * InpBreakoutMultiplier) / point, 1), " points",
+            " | Result=", (isConsolidating ? "YES" : "NO"));
+      debugCounter = 0;
+   }
+
+   return isConsolidating;
 }
 
 //+------------------------------------------------------------------+
@@ -237,10 +248,17 @@ void CheckForBreakout(double atr)
 
    double candleSize = MathAbs(close - open);
    double candleRange = high - low;
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
 
    // Check if candle is strong enough
-   if(candleSize < atr * InpMinMomentumCandle)
+   double minCandleSize = atr * InpMinMomentumCandle;
+   if(candleSize < minCandleSize)
+   {
+      Print("Consolidation found but candle too small: ", DoubleToString(candleSize / point, 1), " points",
+            " | Required: ", DoubleToString(minCandleSize / point, 1), " points (",
+            InpMinMomentumCandle, "x ATR)");
       return;
+   }
 
    // Check volume if enabled
    if(InpMinVolumeMultiplier > 0)
@@ -265,8 +283,13 @@ void CheckForBreakout(double atr)
       double bodyRatio = candleSize / candleRange;
       if(bodyRatio > 0.6) // At least 60% body
       {
-         Print("Bullish breakout detected! Close: ", close, " Range high: ", rangeHigh);
+         Print("=== BULLISH BREAKOUT DETECTED ===");
+         Print("Close: ", close, " | Range high: ", rangeHigh, " | Body ratio: ", DoubleToString(bodyRatio * 100, 1), "%");
          OpenTrade(ORDER_TYPE_BUY, atr);
+      }
+      else
+      {
+         Print("Bullish breakout but body ratio too low: ", DoubleToString(bodyRatio * 100, 1), "% (need >60%)");
       }
    }
    // Bearish breakout
@@ -275,8 +298,26 @@ void CheckForBreakout(double atr)
       double bodyRatio = candleSize / candleRange;
       if(bodyRatio > 0.6)
       {
-         Print("Bearish breakout detected! Close: ", close, " Range low: ", rangeLow);
+         Print("=== BEARISH BREAKOUT DETECTED ===");
+         Print("Close: ", close, " | Range low: ", rangeLow, " | Body ratio: ", DoubleToString(bodyRatio * 100, 1), "%");
          OpenTrade(ORDER_TYPE_SELL, atr);
+      }
+      else
+      {
+         Print("Bearish breakout but body ratio too low: ", DoubleToString(bodyRatio * 100, 1), "% (need >60%)");
+      }
+   }
+   else
+   {
+      // Debug: why no breakout?
+      static int noBreakoutCounter = 0;
+      noBreakoutCounter++;
+      if(noBreakoutCounter >= 5)
+      {
+         Print("Strong candle in consolidation but no breakout: Close=", close,
+               " | RangeHigh=", rangeHigh, " | RangeLow=", rangeLow,
+               " | Direction=", (close > open ? "Bullish" : "Bearish"));
+         noBreakoutCounter = 0;
       }
    }
 }
