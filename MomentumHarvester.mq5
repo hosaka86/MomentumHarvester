@@ -22,8 +22,8 @@ input double InpTakeProfitATR = 3.0;           // Take Profit (ATR multiplier)
 input int InpMaxBarsInTrade = 10;              // Max bars in trade (0=disabled)
 
 input group "=== Filters ==="
-input double InpMaxSpreadPips = 2.0;           // Max spread in pips
-input double InpSpreadToMoveRatio = 0.2;       // Max spread/expected move ratio
+input int InpMaxSpreadPoints = 50;             // Max spread in points (0=disabled)
+input double InpSpreadToMoveRatio = 0.2;       // Max spread/expected move ratio (0=disabled)
 input int InpMinVolumeMultiplier = 2;          // Min volume vs average (0=disabled)
 
 input group "=== Trading Hours ==="
@@ -141,22 +141,29 @@ bool PassesFilters(double atr)
          return false;
    }
 
-   // Spread filter
-   double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   double spreadPips = spread / (SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10);
+   // Spread filter in points
+   int spreadPoints = (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   double spreadValue = spreadPoints * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
 
-   if(spreadPips > InpMaxSpreadPips)
+   if(InpMaxSpreadPoints > 0 && spreadPoints > InpMaxSpreadPoints)
    {
-      Print("Spread too high: ", spreadPips, " pips");
+      Print("Spread too high: ", spreadPoints, " points");
       return false;
    }
 
    // Spread to expected move ratio
-   double expectedMove = atr * InpBreakoutMultiplier;
-   if(spread / expectedMove > InpSpreadToMoveRatio)
+   if(InpSpreadToMoveRatio > 0)
    {
-      Print("Spread/Move ratio too high");
-      return false;
+      double expectedMove = atr * InpBreakoutMultiplier;
+      double ratio = spreadValue / expectedMove;
+
+      if(ratio > InpSpreadToMoveRatio)
+      {
+         Print("Spread/Move ratio too high: ", DoubleToString(ratio, 3),
+               " (Spread: ", spreadPoints, " points, Expected move: ",
+               DoubleToString(expectedMove, _Digits), ")");
+         return false;
+      }
    }
 
    return true;
