@@ -1,32 +1,38 @@
 //+------------------------------------------------------------------+
 //|                                            MomentumHarvester.mq5 |
-//|                                                                  |
+//|                                   MA Trend Following Strategy     |
 //+------------------------------------------------------------------+
-#property copyright "Momentum Harvester EA"
-#property version   "1.00"
+#property copyright "MA Trend Follower EA"
+#property version   "2.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 
 //--- Input Parameters
-input group "=== Momentum Detection ==="
-input bool InpRequireConsolidation = false;    // Require consolidation before breakout
-input int InpConsolidationBars = 20;           // Bars for consolidation detection
-input double InpBreakoutMultiplier = 2.0;      // ATR multiplier for breakout
-input int InpATRPeriod = 14;                   // ATR Period
-input double InpMinMomentumCandle = 1.5;       // Min candle size (ATR multiplier)
-input double InpBodyRatioMin = 0.6;            // Min body ratio (0.6 = 60% body)
+input group "=== Moving Averages ==="
+input int InpFastMA = 20;                      // Fast MA period
+input int InpSlowMA = 50;                      // Slow MA period
+input ENUM_MA_METHOD InpMAMethod = MODE_EMA;   // MA method
+input ENUM_APPLIED_PRICE InpMAPrice = PRICE_CLOSE; // MA applied price
+
+input group "=== Entry Rules ==="
+input bool InpRequireBothMA = true;            // Require close above/below BOTH MAs
+input int InpMinBarsAboveMA = 1;               // Min bars above MA before entry (0=instant)
+
+input group "=== Exit Rules ==="
+input bool InpExitOnFastMA = true;             // Exit when fast MA breaks
+input bool InpExitOnSlowMA = false;            // Exit when slow MA breaks (OR condition)
+input int InpMaxBarsInTrade = 0;               // Max bars in trade (0=disabled)
 
 input group "=== Risk Management ==="
 input double InpRiskPercent = 1.0;             // Risk per trade (%)
 input double InpStopLossATR = 3.0;             // Stop Loss (ATR multiplier)
-input double InpTakeProfitATR = 3.0;           // Take Profit (ATR multiplier)
-input int InpMaxBarsInTrade = 10;              // Max bars in trade (0=disabled)
+input double InpTakeProfitATR = 0;             // Take Profit (ATR multiplier, 0=disabled)
+input int InpATRPeriod = 14;                   // ATR Period
 
 input group "=== Filters ==="
 input int InpMaxSpreadPoints = 50;             // Max spread in points (0=disabled)
-input double InpSpreadToMoveRatio = 0.2;       // Max spread/expected move ratio (0=disabled)
-input int InpMinVolumeMultiplier = 2;          // Min volume vs average (0=disabled)
+input double InpSpreadToMoveRatio = 0.5;       // Max spread/expected move ratio (0=disabled)
 
 input group "=== Trading Hours ==="
 input bool InpUseTimeFilter = false;           // Use time filter
@@ -35,30 +41,36 @@ input int InpEndHour = 20;                     // End hour
 
 input group "=== General ==="
 input int InpMagicNumber = 123456;             // Magic number
-input string InpTradeComment = "MomHarvest";   // Trade comment
+input string InpTradeComment = "MATrend";      // Trade comment
 
 //--- Global Variables
 CTrade trade;
-int handleATR;
-double atrBuffer[];
+int handleFastMA, handleSlowMA, handleATR;
+double fastMABuffer[], slowMABuffer[], atrBuffer[];
 datetime lastBarTime = 0;
 int barsInTrade = 0;
-datetime tradeOpenTime = 0;
+int barsAboveMA = 0;
+int barsBelowMA = 0;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   // Initialize ATR indicator
+   // Initialize indicators
+   handleFastMA = iMA(_Symbol, PERIOD_CURRENT, InpFastMA, 0, InpMAMethod, InpMAPrice);
+   handleSlowMA = iMA(_Symbol, PERIOD_CURRENT, InpSlowMA, 0, InpMAMethod, InpMAPrice);
    handleATR = iATR(_Symbol, PERIOD_CURRENT, InpATRPeriod);
-   if(handleATR == INVALID_HANDLE)
+
+   if(handleFastMA == INVALID_HANDLE || handleSlowMA == INVALID_HANDLE || handleATR == INVALID_HANDLE)
    {
-      Print("Failed to create ATR indicator");
+      Print("Failed to create indicators");
       return INIT_FAILED;
    }
 
-   // Set array as series
+   // Set arrays as series
+   ArraySetAsSeries(fastMABuffer, true);
+   ArraySetAsSeries(slowMABuffer, true);
    ArraySetAsSeries(atrBuffer, true);
 
    // Configure trade object
@@ -67,7 +79,7 @@ int OnInit()
    trade.SetTypeFilling(ORDER_FILLING_FOK);
    trade.SetAsyncMode(false);
 
-   Print("MomentumHarvester initialized successfully");
+   Print("MA Trend Follower initialized - Fast MA: ", InpFastMA, " Slow MA: ", InpSlowMA);
    return INIT_SUCCEEDED;
 }
 
@@ -76,8 +88,9 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   if(handleATR != INVALID_HANDLE)
-      IndicatorRelease(handleATR);
+   if(handleFastMA != INVALID_HANDLE) IndicatorRelease(handleFastMA);
+   if(handleSlowMA != INVALID_HANDLE) IndicatorRelease(handleSlowMA);
+   if(handleATR != INVALID_HANDLE) IndicatorRelease(handleATR);
 }
 
 //+------------------------------------------------------------------+
@@ -89,16 +102,13 @@ void OnTick()
    if(!IsNewBar())
       return;
 
-   // Update ATR
-   if(CopyBuffer(handleATR, 0, 0, 3, atrBuffer) < 3)
-      return;
+   // Update indicators
+   if(CopyBuffer(handleFastMA, 0, 0, 3, fastMABuffer) < 3) return;
+   if(CopyBuffer(handleSlowMA, 0, 0, 3, slowMABuffer) < 3) return;
+   if(CopyBuffer(handleATR, 0, 0, 3, atrBuffer) < 3) return;
 
    double currentATR = atrBuffer[0];
-   if(currentATR <= 0)
-   {
-      Print("ATR is zero or negative: ", currentATR);
-      return;
-   }
+   if(currentATR <= 0) return;
 
    // Check if we have an open position
    if(PositionSelect(_Symbol))
@@ -110,22 +120,12 @@ void OnTick()
    // Reset trade counter if no position
    barsInTrade = 0;
 
-   // Debug: Print ATR value once per hour
-   static datetime lastDebugTime = 0;
-   if(TimeCurrent() - lastDebugTime > 3600)
-   {
-      Print("Current ATR: ", DoubleToString(currentATR, _Digits),
-            " | Symbol Point: ", SymbolInfoDouble(_Symbol, SYMBOL_POINT),
-            " | Spread: ", SymbolInfoInteger(_Symbol, SYMBOL_SPREAD), " points");
-      lastDebugTime = TimeCurrent();
-   }
-
    // Apply filters
    if(!PassesFilters(currentATR))
       return;
 
-   // Check for momentum breakout
-   CheckForBreakout(currentATR);
+   // Check for trend entry
+   CheckForEntry(currentATR);
 }
 
 //+------------------------------------------------------------------+
@@ -167,21 +167,23 @@ bool PassesFilters(double atr)
       return false;
    }
 
-   // Spread to expected move ratio (both converted to points for comparison)
+   // Spread to expected move ratio
    if(InpSpreadToMoveRatio > 0)
    {
-      // Convert ATR to points
       double atrInPoints = atr / point;
-      double expectedMovePoints = atrInPoints * InpBreakoutMultiplier;
+      double expectedMovePoints = atrInPoints;
       double ratio = spreadPoints / expectedMovePoints;
 
       if(ratio > InpSpreadToMoveRatio)
       {
-         Print("Spread/Move ratio too high: ", DoubleToString(ratio, 3),
-               " | Spread: ", spreadPoints, " points",
-               " | ATR: ", DoubleToString(atrInPoints, 1), " points (", DoubleToString(atr, _Digits), ")",
-               " | Expected move: ", DoubleToString(expectedMovePoints, 1), " points",
-               " | Ratio: ", DoubleToString(ratio * 100, 1), "% (max: ", DoubleToString(InpSpreadToMoveRatio * 100, 1), "%)");
+         static int ratioCounter = 0;
+         ratioCounter++;
+         if(ratioCounter >= 20)
+         {
+            Print("Spread/Move ratio too high: ", DoubleToString(ratio * 100, 1), "% (max: ",
+                  DoubleToString(InpSpreadToMoveRatio * 100, 1), "%)");
+            ratioCounter = 0;
+         }
          return false;
       }
    }
@@ -190,166 +192,60 @@ bool PassesFilters(double atr)
 }
 
 //+------------------------------------------------------------------+
-//| Detect consolidation phase                                       |
+//| Check for trend entry                                            |
 //+------------------------------------------------------------------+
-bool IsConsolidating(double atr, double &rangeHigh, double &rangeLow)
+void CheckForEntry(double atr)
 {
-   if(InpConsolidationBars < 3)
-      return false;
+   // Get completed candle data
+   double close = iClose(_Symbol, PERIOD_CURRENT, 1);
+   double fastMA = fastMABuffer[1];
+   double slowMA = slowMABuffer[1];
 
-   rangeHigh = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   rangeLow = iLow(_Symbol, PERIOD_CURRENT, 1);
+   // Check bullish setup
+   bool bullishSetup = false;
+   if(InpRequireBothMA)
+      bullishSetup = (close > fastMA && close > slowMA);
+   else
+      bullishSetup = (close > fastMA || close > slowMA);
 
-   // Find highest high and lowest low in consolidation period
-   for(int i = 2; i <= InpConsolidationBars; i++)
+   // Check bearish setup
+   bool bearishSetup = false;
+   if(InpRequireBothMA)
+      bearishSetup = (close < fastMA && close < slowMA);
+   else
+      bearishSetup = (close < fastMA || close < slowMA);
+
+   // Count bars above/below MA
+   if(bullishSetup)
    {
-      double high = iHigh(_Symbol, PERIOD_CURRENT, i);
-      double low = iLow(_Symbol, PERIOD_CURRENT, i);
-
-      if(high > rangeHigh) rangeHigh = high;
-      if(low < rangeLow) rangeLow = low;
+      barsAboveMA++;
+      barsBelowMA = 0;
    }
-
-   double rangeSize = rangeHigh - rangeLow;
-   double avgATR = atrBuffer[1]; // Previous ATR
-   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-
-   // Consolidation if range is smaller than normal volatility
-   bool isConsolidating = (rangeSize < avgATR * InpBreakoutMultiplier);
-
-   // Debug output every 10 bars
-   static int debugCounter = 0;
-   debugCounter++;
-   if(debugCounter >= 10)
+   else if(bearishSetup)
    {
-      Print("Consolidation check: Range=", DoubleToString(rangeSize / point, 1), " points",
-            " | Threshold=", DoubleToString((avgATR * InpBreakoutMultiplier) / point, 1), " points",
-            " | Result=", (isConsolidating ? "YES" : "NO"));
-      debugCounter = 0;
-   }
-
-   return isConsolidating;
-}
-
-//+------------------------------------------------------------------+
-//| Check for momentum breakout                                      |
-//+------------------------------------------------------------------+
-void CheckForBreakout(double atr)
-{
-   double rangeHigh = 0, rangeLow = 0;
-   bool inConsolidation = false;
-
-   // Check consolidation only if required
-   if(InpRequireConsolidation)
-   {
-      if(!IsConsolidating(atr, rangeHigh, rangeLow))
-         return;
-      inConsolidation = true;
+      barsBelowMA++;
+      barsAboveMA = 0;
    }
    else
    {
-      // Get recent range for reference
-      rangeHigh = iHigh(_Symbol, PERIOD_CURRENT, 1);
-      rangeLow = iLow(_Symbol, PERIOD_CURRENT, 1);
-      for(int i = 2; i <= 5; i++)
-      {
-         double high = iHigh(_Symbol, PERIOD_CURRENT, i);
-         double low = iLow(_Symbol, PERIOD_CURRENT, i);
-         if(high > rangeHigh) rangeHigh = high;
-         if(low < rangeLow) rangeLow = low;
-      }
+      barsAboveMA = 0;
+      barsBelowMA = 0;
    }
 
-   // Get current completed candle
-   double open = iOpen(_Symbol, PERIOD_CURRENT, 1);
-   double close = iClose(_Symbol, PERIOD_CURRENT, 1);
-   double high = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double low = iLow(_Symbol, PERIOD_CURRENT, 1);
-
-   double candleSize = MathAbs(close - open);
-   double candleRange = high - low;
-   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-
-   // Check if candle is strong enough
-   double minCandleSize = atr * InpMinMomentumCandle;
-   if(candleSize < minCandleSize)
+   // Entry conditions
+   if(bullishSetup && barsAboveMA >= InpMinBarsAboveMA)
    {
-      static int smallCandleCounter = 0;
-      smallCandleCounter++;
-      if(smallCandleCounter >= 20)
-      {
-         Print("Candle too small: ", DoubleToString(candleSize / point, 1), " points",
-               " | Required: ", DoubleToString(minCandleSize / point, 1), " points (",
-               InpMinMomentumCandle, "x ATR)");
-         smallCandleCounter = 0;
-      }
-      return;
+      Print("=== BULLISH TREND ENTRY ===");
+      Print("Close: ", close, " | Fast MA: ", fastMA, " | Slow MA: ", slowMA,
+            " | Bars above: ", barsAboveMA);
+      OpenTrade(ORDER_TYPE_BUY, atr);
    }
-
-   // Check volume if enabled
-   if(InpMinVolumeMultiplier > 0)
+   else if(bearishSetup && barsBelowMA >= InpMinBarsAboveMA)
    {
-      long currentVol = iVolume(_Symbol, PERIOD_CURRENT, 1);
-      long avgVol = 0;
-      for(int i = 2; i < InpConsolidationBars + 2; i++)
-         avgVol += iVolume(_Symbol, PERIOD_CURRENT, i);
-      avgVol /= InpConsolidationBars;
-
-      if(currentVol < avgVol * InpMinVolumeMultiplier)
-      {
-         Print("Volume too low for breakout");
-         return;
-      }
-   }
-
-   // Check body ratio
-   double bodyRatio = candleRange > 0 ? candleSize / candleRange : 0;
-
-   // Bullish momentum (strong up candle)
-   if(close > open)
-   {
-      bool breakoutCondition = InpRequireConsolidation ? (close > rangeHigh) : true;
-
-      if(breakoutCondition)
-      {
-         if(bodyRatio >= InpBodyRatioMin)
-         {
-            Print("=== BULLISH MOMENTUM DETECTED ===");
-            Print("Candle: ", DoubleToString(candleSize / point, 1), " points",
-                  " | ATR: ", DoubleToString(atr / point, 1), " points",
-                  " | Body ratio: ", DoubleToString(bodyRatio * 100, 1), "%",
-                  " | Breakout: ", (close > rangeHigh ? "YES" : "N/A"));
-            OpenTrade(ORDER_TYPE_BUY, atr);
-         }
-         else
-         {
-            Print("Bullish momentum but body ratio too low: ", DoubleToString(bodyRatio * 100, 1),
-                  "% (need >=", DoubleToString(InpBodyRatioMin * 100, 0), "%)");
-         }
-      }
-   }
-   // Bearish momentum (strong down candle)
-   else if(close < open)
-   {
-      bool breakoutCondition = InpRequireConsolidation ? (close < rangeLow) : true;
-
-      if(breakoutCondition)
-      {
-         if(bodyRatio >= InpBodyRatioMin)
-         {
-            Print("=== BEARISH MOMENTUM DETECTED ===");
-            Print("Candle: ", DoubleToString(candleSize / point, 1), " points",
-                  " | ATR: ", DoubleToString(atr / point, 1), " points",
-                  " | Body ratio: ", DoubleToString(bodyRatio * 100, 1), "%",
-                  " | Breakout: ", (close < rangeLow ? "YES" : "N/A"));
-            OpenTrade(ORDER_TYPE_SELL, atr);
-         }
-         else
-         {
-            Print("Bearish momentum but body ratio too low: ", DoubleToString(bodyRatio * 100, 1),
-                  "% (need >=", DoubleToString(InpBodyRatioMin * 100, 0), "%)");
-         }
-      }
+      Print("=== BEARISH TREND ENTRY ===");
+      Print("Close: ", close, " | Fast MA: ", fastMA, " | Slow MA: ", slowMA,
+            " | Bars below: ", barsBelowMA);
+      OpenTrade(ORDER_TYPE_SELL, atr);
    }
 }
 
@@ -364,22 +260,23 @@ void OpenTrade(ENUM_ORDER_TYPE orderType, double atr)
 
    double stopLoss, takeProfit;
 
-   // Calculate SL and TP based on ATR
+   // Calculate SL based on ATR
    if(orderType == ORDER_TYPE_BUY)
    {
       stopLoss = price - (atr * InpStopLossATR);
-      takeProfit = price + (atr * InpTakeProfitATR);
+      takeProfit = (InpTakeProfitATR > 0) ? price + (atr * InpTakeProfitATR) : 0;
    }
    else
    {
       stopLoss = price + (atr * InpStopLossATR);
-      takeProfit = price - (atr * InpTakeProfitATR);
+      takeProfit = (InpTakeProfitATR > 0) ? price - (atr * InpTakeProfitATR) : 0;
    }
 
    // Normalize prices
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    stopLoss = NormalizeDouble(MathRound(stopLoss / tickSize) * tickSize, _Digits);
-   takeProfit = NormalizeDouble(MathRound(takeProfit / tickSize) * tickSize, _Digits);
+   if(takeProfit > 0)
+      takeProfit = NormalizeDouble(MathRound(takeProfit / tickSize) * tickSize, _Digits);
 
    // Calculate lot size based on risk
    double slDistance = MathAbs(price - stopLoss);
@@ -404,9 +301,8 @@ void OpenTrade(ENUM_ORDER_TYPE orderType, double atr)
 
    if(result)
    {
-      tradeOpenTime = TimeCurrent();
       Print("Trade opened: ", EnumToString(orderType), " Lots: ", lots,
-            " SL: ", stopLoss, " TP: ", takeProfit);
+            " SL: ", stopLoss, " TP: ", (takeProfit > 0 ? DoubleToString(takeProfit, _Digits) : "None"));
    }
    else
    {
@@ -424,20 +320,59 @@ void ManageOpenPosition(double atr)
 
    barsInTrade++;
 
-   // Time-based exit
-   if(InpMaxBarsInTrade > 0 && barsInTrade >= InpMaxBarsInTrade)
+   // Get position info
+   long posType = PositionGetInteger(POSITION_TYPE);
+   double close = iClose(_Symbol, PERIOD_CURRENT, 1);
+   double fastMA = fastMABuffer[1];
+   double slowMA = slowMABuffer[1];
+
+   bool shouldExit = false;
+   string exitReason = "";
+
+   // Check MA break exit
+   if(posType == POSITION_TYPE_BUY)
    {
-      double currentProfit = PositionGetDouble(POSITION_PROFIT);
-      if(currentProfit > 0)
+      if(InpExitOnFastMA && close < fastMA)
       {
-         Print("Closing position after ", barsInTrade, " bars with profit: ", currentProfit);
-         trade.PositionClose(_Symbol);
-         return;
+         shouldExit = true;
+         exitReason = "Close below Fast MA";
+      }
+      else if(InpExitOnSlowMA && close < slowMA)
+      {
+         shouldExit = true;
+         exitReason = "Close below Slow MA";
+      }
+   }
+   else // POSITION_TYPE_SELL
+   {
+      if(InpExitOnFastMA && close > fastMA)
+      {
+         shouldExit = true;
+         exitReason = "Close above Fast MA";
+      }
+      else if(InpExitOnSlowMA && close > slowMA)
+      {
+         shouldExit = true;
+         exitReason = "Close above Slow MA";
       }
    }
 
-   // Could add trailing stop logic here later if needed
-   // For now we rely on fixed TP and time-based exit
+   // Time-based exit
+   if(InpMaxBarsInTrade > 0 && barsInTrade >= InpMaxBarsInTrade)
+   {
+      shouldExit = true;
+      exitReason = StringFormat("Max bars in trade (%d)", InpMaxBarsInTrade);
+   }
+
+   // Execute exit
+   if(shouldExit)
+   {
+      double profit = PositionGetDouble(POSITION_PROFIT);
+      Print("=== CLOSING POSITION ===");
+      Print("Reason: ", exitReason, " | Profit: ", DoubleToString(profit, 2),
+            " | Bars in trade: ", barsInTrade);
+      trade.PositionClose(_Symbol);
+   }
 }
 
 //+------------------------------------------------------------------+
