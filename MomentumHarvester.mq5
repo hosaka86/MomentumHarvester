@@ -25,14 +25,9 @@ input bool InpExitOnSlowMA = false;            // Exit when slow MA breaks (OR c
 input int InpMaxBarsInTrade = 0;               // Max bars in trade (0=disabled)
 
 input group "=== Risk Management ==="
-input double InpRiskPercent = 1.0;             // Risk per trade (%)
-input double InpStopLossATR = 3.0;             // Stop Loss (ATR multiplier)
-input double InpTakeProfitATR = 0;             // Take Profit (ATR multiplier, 0=disabled)
-input int InpATRPeriod = 14;                   // ATR Period
-
-input group "=== Filters ==="
-input int InpMaxSpreadPoints = 50;             // Max spread in points (0=disabled)
-input double InpSpreadToMoveRatio = 0.5;       // Max spread/expected move ratio (0=disabled)
+input double InpLotSize = 0.01;                // Fixed lot size
+input double InpStopLossPips = 100;            // Stop Loss in pips (0=disabled)
+input double InpTakeProfitPips = 0;            // Take Profit in pips (0=disabled)
 
 input group "=== Trading Hours ==="
 input bool InpUseTimeFilter = false;           // Use time filter
@@ -45,8 +40,8 @@ input string InpTradeComment = "MATrend";      // Trade comment
 
 //--- Global Variables
 CTrade trade;
-int handleFastMA, handleSlowMA, handleATR;
-double fastMABuffer[], slowMABuffer[], atrBuffer[];
+int handleFastMA, handleSlowMA;
+double fastMABuffer[], slowMABuffer[];
 datetime lastBarTime = 0;
 int barsInTrade = 0;
 int barsAboveMA = 0;
@@ -60,9 +55,8 @@ int OnInit()
    // Initialize indicators
    handleFastMA = iMA(_Symbol, PERIOD_CURRENT, InpFastMA, 0, InpMAMethod, InpMAPrice);
    handleSlowMA = iMA(_Symbol, PERIOD_CURRENT, InpSlowMA, 0, InpMAMethod, InpMAPrice);
-   handleATR = iATR(_Symbol, PERIOD_CURRENT, InpATRPeriod);
 
-   if(handleFastMA == INVALID_HANDLE || handleSlowMA == INVALID_HANDLE || handleATR == INVALID_HANDLE)
+   if(handleFastMA == INVALID_HANDLE || handleSlowMA == INVALID_HANDLE)
    {
       Print("Failed to create indicators");
       return INIT_FAILED;
@@ -71,7 +65,6 @@ int OnInit()
    // Set arrays as series
    ArraySetAsSeries(fastMABuffer, true);
    ArraySetAsSeries(slowMABuffer, true);
-   ArraySetAsSeries(atrBuffer, true);
 
    // Configure trade object
    trade.SetExpertMagicNumber(InpMagicNumber);
@@ -90,7 +83,6 @@ void OnDeinit(const int reason)
 {
    if(handleFastMA != INVALID_HANDLE) IndicatorRelease(handleFastMA);
    if(handleSlowMA != INVALID_HANDLE) IndicatorRelease(handleSlowMA);
-   if(handleATR != INVALID_HANDLE) IndicatorRelease(handleATR);
 }
 
 //+------------------------------------------------------------------+
@@ -105,27 +97,28 @@ void OnTick()
    // Update indicators
    if(CopyBuffer(handleFastMA, 0, 0, 3, fastMABuffer) < 3) return;
    if(CopyBuffer(handleSlowMA, 0, 0, 3, slowMABuffer) < 3) return;
-   if(CopyBuffer(handleATR, 0, 0, 3, atrBuffer) < 3) return;
-
-   double currentATR = atrBuffer[0];
-   if(currentATR <= 0) return;
 
    // Check if we have an open position
    if(PositionSelect(_Symbol))
    {
-      ManageOpenPosition(currentATR);
+      ManageOpenPosition();
       return;
    }
 
    // Reset trade counter if no position
    barsInTrade = 0;
 
-   // Apply filters
-   if(!PassesFilters(currentATR))
-      return;
+   // Time filter
+   if(InpUseTimeFilter)
+   {
+      MqlDateTime dt;
+      TimeToStruct(TimeCurrent(), dt);
+      if(dt.hour < InpStartHour || dt.hour >= InpEndHour)
+         return;
+   }
 
    // Check for trend entry
-   CheckForEntry(currentATR);
+   CheckForEntry();
 }
 
 //+------------------------------------------------------------------+
@@ -143,58 +136,9 @@ bool IsNewBar()
 }
 
 //+------------------------------------------------------------------+
-//| Check if trading conditions pass filters                         |
-//+------------------------------------------------------------------+
-bool PassesFilters(double atr)
-{
-   // Time filter
-   if(InpUseTimeFilter)
-   {
-      MqlDateTime dt;
-      TimeToStruct(TimeCurrent(), dt);
-      if(dt.hour < InpStartHour || dt.hour >= InpEndHour)
-         return false;
-   }
-
-   // Get spread and point size
-   int spreadPoints = (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-
-   // Simple spread filter
-   if(InpMaxSpreadPoints > 0 && spreadPoints > InpMaxSpreadPoints)
-   {
-      Print("Spread too high: ", spreadPoints, " points (max: ", InpMaxSpreadPoints, ")");
-      return false;
-   }
-
-   // Spread to expected move ratio
-   if(InpSpreadToMoveRatio > 0)
-   {
-      double atrInPoints = atr / point;
-      double expectedMovePoints = atrInPoints;
-      double ratio = spreadPoints / expectedMovePoints;
-
-      if(ratio > InpSpreadToMoveRatio)
-      {
-         static int ratioCounter = 0;
-         ratioCounter++;
-         if(ratioCounter >= 20)
-         {
-            Print("Spread/Move ratio too high: ", DoubleToString(ratio * 100, 1), "% (max: ",
-                  DoubleToString(InpSpreadToMoveRatio * 100, 1), "%)");
-            ratioCounter = 0;
-         }
-         return false;
-      }
-   }
-
-   return true;
-}
-
-//+------------------------------------------------------------------+
 //| Check for trend entry                                            |
 //+------------------------------------------------------------------+
-void CheckForEntry(double atr)
+void CheckForEntry()
 {
    // Get completed candle data
    double close = iClose(_Symbol, PERIOD_CURRENT, 1);
@@ -238,71 +182,63 @@ void CheckForEntry(double atr)
       Print("=== BULLISH TREND ENTRY ===");
       Print("Close: ", close, " | Fast MA: ", fastMA, " | Slow MA: ", slowMA,
             " | Bars above: ", barsAboveMA);
-      OpenTrade(ORDER_TYPE_BUY, atr);
+      OpenTrade(ORDER_TYPE_BUY);
    }
    else if(bearishSetup && barsBelowMA >= InpMinBarsAboveMA)
    {
       Print("=== BEARISH TREND ENTRY ===");
       Print("Close: ", close, " | Fast MA: ", fastMA, " | Slow MA: ", slowMA,
             " | Bars below: ", barsBelowMA);
-      OpenTrade(ORDER_TYPE_SELL, atr);
+      OpenTrade(ORDER_TYPE_SELL);
    }
 }
 
 //+------------------------------------------------------------------+
-//| Open trade with calculated risk                                  |
+//| Open trade with fixed lot size                                   |
 //+------------------------------------------------------------------+
-void OpenTrade(ENUM_ORDER_TYPE orderType, double atr)
+void OpenTrade(ENUM_ORDER_TYPE orderType)
 {
    double price = (orderType == ORDER_TYPE_BUY) ?
                   SymbolInfoDouble(_Symbol, SYMBOL_ASK) :
                   SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
-   double stopLoss, takeProfit;
+   double stopLoss = 0, takeProfit = 0;
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
 
-   // Calculate SL based on ATR
-   if(orderType == ORDER_TYPE_BUY)
+   // Calculate SL and TP if specified
+   if(InpStopLossPips > 0)
    {
-      stopLoss = price - (atr * InpStopLossATR);
-      takeProfit = (InpTakeProfitATR > 0) ? price + (atr * InpTakeProfitATR) : 0;
+      double slDistance = InpStopLossPips * point * 10; // pips to price
+      if(orderType == ORDER_TYPE_BUY)
+         stopLoss = price - slDistance;
+      else
+         stopLoss = price + slDistance;
+      stopLoss = NormalizeDouble(stopLoss, digits);
    }
-   else
+
+   if(InpTakeProfitPips > 0)
    {
-      stopLoss = price + (atr * InpStopLossATR);
-      takeProfit = (InpTakeProfitATR > 0) ? price - (atr * InpTakeProfitATR) : 0;
+      double tpDistance = InpTakeProfitPips * point * 10; // pips to price
+      if(orderType == ORDER_TYPE_BUY)
+         takeProfit = price + tpDistance;
+      else
+         takeProfit = price - tpDistance;
+      takeProfit = NormalizeDouble(takeProfit, digits);
    }
-
-   // Normalize prices
-   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   stopLoss = NormalizeDouble(MathRound(stopLoss / tickSize) * tickSize, _Digits);
-   if(takeProfit > 0)
-      takeProfit = NormalizeDouble(MathRound(takeProfit / tickSize) * tickSize, _Digits);
-
-   // Calculate lot size based on risk
-   double slDistance = MathAbs(price - stopLoss);
-   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-
-   double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
-   double riskAmount = accountBalance * (InpRiskPercent / 100.0);
-
-   double lots = riskAmount / (slDistance / tickSize * tickValue);
-   lots = MathFloor(lots / lotStep) * lotStep;
-   lots = MathMax(minLot, MathMin(maxLot, lots));
 
    // Execute trade
    bool result = false;
    if(orderType == ORDER_TYPE_BUY)
-      result = trade.Buy(lots, _Symbol, price, stopLoss, takeProfit, InpTradeComment);
+      result = trade.Buy(InpLotSize, _Symbol, price, stopLoss, takeProfit, InpTradeComment);
    else
-      result = trade.Sell(lots, _Symbol, price, stopLoss, takeProfit, InpTradeComment);
+      result = trade.Sell(InpLotSize, _Symbol, price, stopLoss, takeProfit, InpTradeComment);
 
    if(result)
    {
-      Print("Trade opened: ", EnumToString(orderType), " Lots: ", lots,
-            " SL: ", stopLoss, " TP: ", (takeProfit > 0 ? DoubleToString(takeProfit, _Digits) : "None"));
+      Print("Trade opened: ", EnumToString(orderType), " Lots: ", InpLotSize,
+            " SL: ", (stopLoss > 0 ? DoubleToString(stopLoss, digits) : "None"),
+            " TP: ", (takeProfit > 0 ? DoubleToString(takeProfit, digits) : "None"));
    }
    else
    {
@@ -313,7 +249,7 @@ void OpenTrade(ENUM_ORDER_TYPE orderType, double atr)
 //+------------------------------------------------------------------+
 //| Manage open position                                             |
 //+------------------------------------------------------------------+
-void ManageOpenPosition(double atr)
+void ManageOpenPosition()
 {
    if(!PositionSelect(_Symbol))
       return;
