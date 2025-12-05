@@ -19,6 +19,10 @@ input group "=== Entry Rules ==="
 input bool InpRequireBothMA = true;            // Require close above/below BOTH MAs
 input int InpMinBarsAboveMA = 1;               // Min bars above MA before entry (0=instant)
 
+input group "=== Trade Direction ==="
+input bool InpAllowBuy = true;                 // Allow BUY trades
+input bool InpAllowSell = true;                // Allow SELL trades
+
 input group "=== Exit Rules ==="
 input bool InpExitOnFastMA = true;             // Exit when fast MA breaks
 input bool InpExitOnSlowMA = false;            // Exit when slow MA breaks (OR condition)
@@ -177,14 +181,14 @@ void CheckForEntry()
    }
 
    // Entry conditions
-   if(bullishSetup && barsAboveMA >= InpMinBarsAboveMA)
+   if(bullishSetup && barsAboveMA >= InpMinBarsAboveMA && InpAllowBuy)
    {
       Print("=== BULLISH TREND ENTRY ===");
       Print("Close: ", close, " | Fast MA: ", fastMA, " | Slow MA: ", slowMA,
             " | Bars above: ", barsAboveMA);
       OpenTrade(ORDER_TYPE_BUY);
    }
-   else if(bearishSetup && barsBelowMA >= InpMinBarsAboveMA)
+   else if(bearishSetup && barsBelowMA >= InpMinBarsAboveMA && InpAllowSell)
    {
       Print("=== BEARISH TREND ENTRY ===");
       Print("Close: ", close, " | Fast MA: ", fastMA, " | Slow MA: ", slowMA,
