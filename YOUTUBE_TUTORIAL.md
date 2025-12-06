@@ -212,24 +212,25 @@ input int InpMaxBarsInTrade = 0;               // Max bars in trade (0=disabled)
 **Why?** Risk management is crucial - determines how much you risk per trade.
 
 ### 🎙️ Narration (Text-to-Speech Ready):
-"Part 6 introduces risk management parameters, which are absolutely critical for protecting your trading account. The lot size parameter controls your position size, with zero point zero one being a micro lot suitable for testing and small accounts. Stop loss in pips defines your maximum loss per trade, measured in pips rather than price. Setting it to 100 pips means you'll risk 100 pips on each trade, while setting it to zero disables the stop loss entirely, though that's not recommended. Take profit in pips works the same way, defining your profit target, and setting it to zero means you'll rely on the moving average exit rules instead of a fixed profit target."
+"Part 6 introduces risk management parameters, which are absolutely critical for protecting your trading account. The lot size parameter controls your position size, with zero point zero one being a micro lot suitable for testing and small accounts. Stop loss in points defines your maximum loss per trade, measured in points rather than pips to avoid conversion issues across different instruments. Setting it to 100 points means you'll risk 100 points on each trade, which equals 10 pips on a 5-digit broker. Setting it to zero disables the stop loss entirely, though that's not recommended. Take profit in points works the same way, defining your profit target, and setting it to zero means you'll rely on the moving average exit rules instead of a fixed profit target."
 
 ```mql5
 input group "=== Risk Management ==="
 // Fixed lot size for all trades
 input double InpLotSize = 0.01;                // Fixed lot size
-// Stop Loss in pips - maximum loss per trade
-input double InpStopLossPips = 100;            // Stop Loss in pips (0=disabled)
-// Take Profit in pips - profit target
-input double InpTakeProfitPips = 0;            // Take Profit in pips (0=disabled)
+// Stop Loss in points - maximum loss per trade
+input double InpStopLossPoints = 100;          // Stop Loss in points (0=disabled)
+// Take Profit in points - profit target
+input double InpTakeProfitPoints = 0;          // Take Profit in points (0=disabled)
 ```
 
 **Explanation:**
 - **InpLotSize**: Fixed position size (0.01 = micro lot)
   - Future enhancement: could implement percentage-based sizing
-- **InpStopLossPips**: Maximum loss in pips (10 pips = 100 points on 5-digit broker)
+- **InpStopLossPoints**: Maximum loss in points (100 points = 10 pips on 5-digit broker)
+  - Using points instead of pips avoids conversion issues with different instruments
   - Set to 0 to disable SL (not recommended!)
-- **InpTakeProfitPips**: Profit target in pips
+- **InpTakeProfitPoints**: Profit target in points
   - Set to 0 to let trend run (exit only on MA cross)
 
 ---
@@ -824,16 +825,15 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
 **Why?** Protects against excessive losses - crucial risk management.
 
 ### 🎙️ Narration (Text-to-Speech Ready):
-"Part 23 calculates our stop loss price, which is critical for risk management. We first check if stop loss is enabled by testing if the pips value is greater than zero. If enabled, we convert pips to price distance by multiplying by the point value and by ten, since one pip equals ten points on a five-digit broker. For buy orders, the stop loss goes below the entry price since losses occur when price drops, while for sell orders, it goes above the entry price since losses occur when price rises. Finally, we normalize the price to the correct number of decimal places required by the broker."
+"Part 23 calculates our stop loss price, which is critical for risk management. We first check if stop loss is enabled by testing if the points value is greater than zero. If enabled, we convert points to price distance by simply multiplying by the point value. Using points instead of pips avoids conversion issues and works universally across all instruments. For buy orders, the stop loss goes below the entry price since losses occur when price drops, while for sell orders, it goes above the entry price since losses occur when price rises. Finally, we normalize the price to the correct number of decimal places required by the broker."
 
 ```mql5
-   // Calculate Stop Loss if specified (InpStopLossPips > 0)
-   if(InpStopLossPips > 0)
+   // Calculate Stop Loss if specified (InpStopLossPoints > 0)
+   if(InpStopLossPoints > 0)
    {
-      // Convert pips to price distance
-      // Multiply by 10 because 1 pip = 10 points on 5-digit broker
-      // Example: 100 pips * 0.00001 * 10 = 0.00100 (100 points)
-      double slDistance = InpStopLossPips * point * 10;
+      // Convert points to price distance
+      // Example: 100 points * 0.00001 = 0.00100
+      double slDistance = InpStopLossPoints * point; // points to price
 
       if(orderType == ORDER_TYPE_BUY)
          // BUY: Stop Loss is BELOW entry price
@@ -848,14 +848,15 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
 ```
 
 **Explanation:**
-- **Pips vs Points**:
-  - 1 pip = 10 points (on 5-digit broker)
-  - EUR/USD: 1.10500 → 1.10510 = 1 pip = 10 points
+- **Points**: Universal measurement that works for all instruments
+  - EUR/USD (5-digit): 1 point = 0.00001
+  - JPY pairs (3-digit): 1 point = 0.001
+  - Gold: 1 point = 0.01
 - **slDistance**: Distance from entry to SL in price terms
 - **BUY SL logic**: Loss occurs when price drops → SL below entry
 - **SELL SL logic**: Loss occurs when price rises → SL above entry
 - **NormalizeDouble()**: Rounds to broker's required precision
-- **InpStopLossPips = 0**: Disables SL (stopLoss remains 0)
+- **InpStopLossPoints = 0**: Disables SL (stopLoss remains 0)
 
 ---
 
@@ -866,14 +867,14 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
 **Why?** Defines profit target - alternative to trailing with MA exits.
 
 ### 🎙️ Narration (Text-to-Speech Ready):
-"Part 24 calculates take profit using the exact same logic as stop loss, but in the opposite direction. We convert pips to price distance, then for buy orders, place the take profit above the entry price since profits occur when price rises, while for sell orders, we place it below the entry price since profits occur when price falls. This gives you the flexibility to use fixed profit targets instead of or in addition to the moving average exit rules. Setting take profit to zero means you'll rely entirely on the MA crosses for your exits, letting trends run as long as they remain valid."
+"Part 24 calculates take profit using the exact same logic as stop loss, but in the opposite direction. We convert points to price distance by multiplying by the point value, then for buy orders, place the take profit above the entry price since profits occur when price rises, while for sell orders, we place it below the entry price since profits occur when price falls. This gives you the flexibility to use fixed profit targets instead of or in addition to the moving average exit rules. Setting take profit to zero means you'll rely entirely on the MA crosses for your exits, letting trends run as long as they remain valid."
 
 ```mql5
-   // Calculate Take Profit if specified (InpTakeProfitPips > 0)
-   if(InpTakeProfitPips > 0)
+   // Calculate Take Profit if specified (InpTakeProfitPoints > 0)
+   if(InpTakeProfitPoints > 0)
    {
-      // Convert pips to price distance (same logic as SL)
-      double tpDistance = InpTakeProfitPips * point * 10;
+      // Convert points to price distance (same logic as SL)
+      double tpDistance = InpTakeProfitPoints * point; // points to price
 
       if(orderType == ORDER_TYPE_BUY)
          // BUY: Take Profit is ABOVE entry price
@@ -894,7 +895,7 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
 - **Opposite of SL**:
   - BUY: SL below, TP above
   - SELL: SL above, TP below
-- **InpTakeProfitPips = 0**: No TP, exit only on MA cross
+- **InpTakeProfitPoints = 0**: No TP, exit only on MA cross
 - **Flexibility**: Can use TP for fixed target OR MA for dynamic exit
 
 ---
