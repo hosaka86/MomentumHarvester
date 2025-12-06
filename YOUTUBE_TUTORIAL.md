@@ -79,6 +79,9 @@ This tutorial breaks down a complete Moving Average Trend Following Expert Advis
 
 **Why?** The header provides information about the EA, and we need the Trade library to execute orders.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Let's start with Part 1: the file header and basic setup. Every MQL5 Expert Advisor begins with a header section that contains metadata like copyright and version information. The hash-property strict directive enables strict compilation mode, which helps catch errors during development. Most importantly, we include the Trade library with the hash-include statement. This library provides the C-Trade class, which is what we'll use to execute all our buy and sell orders. Think of this as importing the toolbox we need to actually place trades."
+
 ```mql5
 //+------------------------------------------------------------------+
 //|                                            MomentumHarvester.mq5 |
@@ -104,6 +107,9 @@ This tutorial breaks down a complete Moving Average Trend Following Expert Advis
 **What is this?** User-configurable parameters for the Moving Averages that define our trend.
 
 **Why?** We want users to customize the MA periods and calculation method without changing code.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 2 covers our Moving Average input parameters. The input keyword in MQL5 makes variables user-configurable, meaning traders can adjust these settings without touching the code. We define a fast MA with a period of 20, which reacts quickly to price changes, and a slow MA with a period of 50, which shows the longer-term trend. We're using exponential moving averages, or EMAs, which give more weight to recent prices compared to simple moving averages. Finally, we calculate these MAs based on the closing price of each candle. These four parameters are the foundation of our entire strategy."
 
 ```mql5
 //--- Input Parameters
@@ -131,6 +137,9 @@ input ENUM_APPLIED_PRICE InpMAPrice = PRICE_CLOSE; // Which price to use (close,
 
 **Why?** Different entry rules create different trading behaviors and risk profiles.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 3 introduces our entry rules, which control when we actually enter trades. The first parameter, Require Both MA, determines whether price must be above or below both moving averages, or just one of them. Setting this to true creates a stricter filter with fewer but higher quality signals. The second parameter, Minimum Bars Above MA, prevents us from jumping into trades on the very first bar. Instead, we can require confirmation by waiting for one or more consecutive bars to meet our criteria. Setting this to zero gives instant entries, while setting it to one or higher adds confirmation."
+
 ```mql5
 input group "=== Entry Rules ==="
 // Determines if price must be above/below BOTH MAs or just ONE
@@ -152,6 +161,9 @@ input int InpMinBarsAboveMA = 1;               // Min bars above MA before entry
 
 **Why?** Sometimes you only want to trade in one direction based on market analysis.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 4 gives us directional control with two simple boolean switches. Allow Buy and Allow Sell let you enable or disable long and short positions independently. This is incredibly useful when you have a directional bias on the market. For example, if you believe we're in a strong bull market, you can disable sells and only take buy trades. This flexibility allows you to adapt the EA to different market conditions without changing any code."
+
 ```mql5
 input group "=== Trade Direction ==="
 // These switches allow directional bias trading
@@ -171,6 +183,9 @@ input bool InpAllowSell = true;                // Allow SELL trades
 **What is this?** Defines when to close open positions.
 
 **Why?** Exit strategy is as important as entry - determines profit/loss on trades.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 5 covers our exit rules, which are just as important as our entry logic. We have two moving average exit options: exit on fast MA break, and exit on slow MA break. These work as an OR condition, meaning either one can trigger the exit. The fast MA gives you earlier exits when the trend weakens, while the slow MA lets winners run longer. Additionally, we have a maximum bars in trade parameter that forces an exit after a certain number of candles, preventing us from holding losing positions indefinitely. Set this to zero to disable it, or to something like 50 to enforce a maximum hold time."
 
 ```mql5
 input group "=== Exit Rules ==="
@@ -195,6 +210,9 @@ input int InpMaxBarsInTrade = 0;               // Max bars in trade (0=disabled)
 **What is this?** Controls position sizing and stop loss/take profit levels.
 
 **Why?** Risk management is crucial - determines how much you risk per trade.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 6 introduces risk management parameters, which are absolutely critical for protecting your trading account. The lot size parameter controls your position size, with zero point zero one being a micro lot suitable for testing and small accounts. Stop loss in pips defines your maximum loss per trade, measured in pips rather than price. Setting it to 100 pips means you'll risk 100 pips on each trade, while setting it to zero disables the stop loss entirely, though that's not recommended. Take profit in pips works the same way, defining your profit target, and setting it to zero means you'll rely on the moving average exit rules instead of a fixed profit target."
 
 ```mql5
 input group "=== Risk Management ==="
@@ -221,6 +239,9 @@ input double InpTakeProfitPips = 0;            // Take Profit in pips (0=disable
 **What is this?** Time filter and EA identification settings.
 
 **Why?** Some strategies work better during specific hours; magic number identifies this EA's trades.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 7 covers trading hours and general settings that control when and how the EA operates. The time filter lets you restrict trading to specific hours of the day based on broker server time, which is useful for avoiding low-liquidity periods like the Asian session or overnight trading. The magic number is a unique identifier that tags all trades opened by this EA, ensuring it doesn't interfere with manual trades or other Expert Advisors running on the same account. Finally, the trade comment parameter adds a label to all your trades, making them easy to identify in your trading history."
 
 ```mql5
 input group "=== Trading Hours ==="
@@ -250,6 +271,9 @@ input string InpTradeComment = "MATrend";      // Trade comment
 **What is this?** Variables that persist between function calls and store EA state.
 
 **Why?** We need to remember indicator handles, buffers, and track trading state.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 8 defines our global variables, which maintain state across the entire lifecycle of the EA. The CTrade object handles all our trading operations like opening and closing positions. The indicator handles are references to our moving average indicators that we'll create during initialization. The MA buffer arrays store the actual moving average values that we'll use for our trading logic. We track the last bar time to ensure we only make decisions once per completed candle, and we maintain counters for bars in trade and confirmation bars, which help us enforce our entry and exit rules."
 
 ```mql5
 //--- Global Variables
@@ -289,6 +313,9 @@ int barsBelowMA = 0;
 
 **Why?** We must create indicators and configure settings before trading begins.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 9 begins our OnInit function, which runs exactly once when the EA is first attached to a chart. This is where we create our moving average indicators using the iMA function, which returns a handle or reference to each indicator. We pass in the user's configured parameters for period, method, and price type. It's critical to check if the indicators were created successfully by verifying the handles aren't invalid, and if creation fails, we return INIT_FAILED to prevent the EA from running with broken indicators."
+
 ```mql5
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -322,6 +349,9 @@ int OnInit()
 **What is this?** Final initialization steps - configure arrays and trading settings.
 
 **Why?** Arrays must be set as series; trade object needs magic number and execution settings.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 10 completes our initialization by configuring the indicator buffers and trade settings. We set both MA buffers as series arrays, which makes index zero represent the most recent bar, matching how MQL5 references price data. Then we configure the CTrade object with our magic number for trade identification, set the maximum slippage we'll accept, specify Fill or Kill execution mode, and disable asynchronous mode so the EA waits for trade confirmation before continuing. Finally, we return INIT_SUCCEEDED to signal that everything initialized correctly and the EA is ready to start trading."
 
 ```mql5
    // Set arrays as series (indexing: 0=newest, 1=previous, 2=older, etc.)
@@ -357,6 +387,9 @@ int OnInit()
 
 **Why?** Must release indicator resources to prevent memory leaks.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 11 covers the OnDeinit function, which is the cleanup counterpart to OnInit. This function runs when the EA is removed from the chart, when MetaTrader closes, or when you recompile the code. Its job is simple but important: release the indicator handles to free up memory. We check that each handle is valid before releasing it, which is a defensive programming practice that prevents errors if something went wrong during initialization."
+
 ```mql5
 //+------------------------------------------------------------------+
 //| Expert deinitialization function                                 |
@@ -383,6 +416,9 @@ void OnDeinit(const int reason)
 **What is this?** Called every time price changes (every tick).
 
 **Why?** This is the "heart" of the EA - where all trading decisions happen.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 12 introduces the OnTick function, which is the beating heart of our Expert Advisor. This function is called automatically every single time the price changes, which could be hundreds of times per second during active market hours. However, we don't want to make trading decisions on every tick, so the first thing we do is check if a new bar has formed using our IsNewBar function. If we're still on the same candle as before, we simply exit and wait. Once a new bar forms, we copy the latest moving average values into our buffers using CopyBuffer, retrieving three bars of data for current, previous, and historical analysis."
 
 ```mql5
 //+------------------------------------------------------------------+
@@ -420,6 +456,9 @@ void OnTick()
 
 **Why?** If we're already in a trade, we should manage it instead of looking for new entries.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 13 handles position management logic within our OnTick function. We use PositionSelect to check if we already have an open position for the current symbol. If a position exists, we call our ManageOpenPosition function to check exit conditions and then return immediately, preventing the EA from looking for new entries while already in a trade. This ensures we maintain only one position at a time. If no position is found, we reset the bars in trade counter to zero, preparing for the next potential entry."
+
 ```mql5
    // STEP 3: Check if we already have a position open
    // PositionSelect returns true if a position exists for this symbol
@@ -449,6 +488,9 @@ void OnTick()
 **What is this?** Final checks before looking for trade entries.
 
 **Why?** Respect time filter if enabled, then check for valid entry setups.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 14 completes our OnTick function with time filtering and entry logic. If the time filter is enabled, we convert the current broker time into a structure so we can access the hour component. We then check if the current hour falls outside our specified trading window, and if so, we exit without looking for entries. This is useful for avoiding low-liquidity periods or overnight risk. Finally, if we pass the time filter and have no open positions, we call CheckForEntry to analyze the moving average conditions and potentially open a new trade."
 
 ```mql5
    // STEP 5: Apply time filter if enabled
@@ -483,6 +525,9 @@ void OnTick()
 **What is this?** Detects when a new candle has formed.
 
 **Why?** We only want to make decisions on completed candles, not mid-candle.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 15 introduces the IsNewBar function, which is a critical utility that prevents our EA from overtrading. The function works by retrieving the opening time of the current bar using iTime, and comparing it to the last bar time we stored in our global variable. If these times are different, it means a new candle has formed, so we update our stored time and return true. If they're the same, we return false, signaling that we're still on the same bar. This elegant solution ensures our trading logic executes exactly once per candle, not on every price tick."
 
 ```mql5
 //+------------------------------------------------------------------+
@@ -523,6 +568,9 @@ bool IsNewBar()
 
 **Why?** Need close price and MA values to determine if trend conditions are met.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 16 begins our CheckForEntry function by gathering the data we need for analysis. We retrieve the closing price of the previous completed bar using index one, not index zero, because the current bar at index zero is still forming and its price keeps changing. We also grab the fast and slow moving average values from index one in our buffers. Using completed bar data is crucial for reliable trading decisions, as it ensures we're analyzing confirmed price action rather than mid-candle fluctuations."
+
 ```mql5
 //+------------------------------------------------------------------+
 //| Check for trend entry                                            |
@@ -552,6 +600,9 @@ void CheckForEntry()
 **What is this?** Logic to identify bullish (uptrend) entry conditions.
 
 **Why?** Different rules for strict vs lenient entry (both MAs vs either MA).
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 17 determines whether we have a bullish setup worthy of entering a buy trade. If the Require Both MA parameter is true, we use strict mode where the closing price must be above both the fast and slow moving averages, creating an AND condition that provides stronger trend confirmation. If Require Both MA is false, we use lenient mode where price only needs to be above either moving average, creating an OR condition that generates more trading opportunities but with potentially weaker signals. This flexibility lets you tune the strategy's aggressiveness to match your risk tolerance."
 
 ```mql5
    // Determine if we have a BULLISH setup (price above MAs)
@@ -587,6 +638,9 @@ void CheckForEntry()
 
 **Why?** Mirror logic of bullish setup for selling opportunities.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 18 implements the bearish setup detection, which is the mirror image of our bullish logic. In strict mode, price must be below both moving averages to confirm a strong downtrend, while in lenient mode, price only needs to be below either moving average for an earlier signal. The logic is identical to Part 17 except we've inverted the comparison operators from greater than to less than. This symmetrical approach ensures our strategy treats long and short trades with the same logical consistency."
+
 ```mql5
    // Determine if we have a BEARISH setup (price below MAs)
    bool bearishSetup = false;
@@ -613,6 +667,9 @@ void CheckForEntry()
 **What is this?** Tracks consecutive bars above/below MAs for entry confirmation.
 
 **Why?** Prevents entering on first touch - requires sustained move for confirmation.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 19 implements our confirmation bar counting system, which prevents jumping into trades on the very first signal. If we detect a bullish setup, we increment the bars above MA counter and reset the bars below MA counter to zero, since we can't be bullish and bearish simultaneously. If we detect a bearish setup, we do the opposite. If neither setup is present, meaning price is between the moving averages or conditions are mixed, we reset both counters to zero. This mechanism ensures we only enter after price has shown sustained directional movement for the number of bars specified in our minimum bars parameter."
 
 ```mql5
    // Count consecutive bars that meet setup criteria
@@ -654,6 +711,9 @@ void CheckForEntry()
 
 **Why?** Final gate before entering - verifies all conditions and direction allowed.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 20 executes our bullish entry after verifying all conditions are met. We check three things: first, that we have a bullish setup with price above the moving averages; second, that we've accumulated enough confirmation bars to meet our minimum requirement; and third, that buy trades are allowed by the directional filter. All three must be true for the entry to proceed. If they are, we log detailed entry information to the Experts tab showing the exact price and moving average values, then call our OpenTrade function with ORDER_TYPE_BUY to execute the market order."
+
 ```mql5
    // Check if all conditions met for BULLISH entry
    if(bullishSetup && barsAboveMA >= InpMinBarsAboveMA && InpAllowBuy)
@@ -687,6 +747,9 @@ void CheckForEntry()
 
 **Why?** Mirror logic for sell entries - ensures symmetrical trading approach.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 21 handles bearish entries using the same structure as our bullish logic. We use else if to ensure we only enter one trade at a time, since we can't be both bullish and bearish simultaneously. The three conditions mirror Part 20: we need a bearish setup, sufficient confirmation bars, and sell trades must be allowed. Notice we use the same minimum bars parameter for both directions, which keeps our confirmation requirements consistent. Once all conditions are met, we log the entry details and call OpenTrade with ORDER_TYPE_SELL to execute the short position."
+
 ```mql5
    else if(bearishSetup && barsBelowMA >= InpMinBarsAboveMA && InpAllowSell)
    {
@@ -718,6 +781,9 @@ void CheckForEntry()
 **What is this?** Determines the execution price for market order.
 
 **Why?** BUY uses Ask price, SELL uses Bid price (standard Forex convention).
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 22 begins our OpenTrade function, which handles the actual order execution. The function accepts an order type parameter that tells us whether we're buying or selling. We use a ternary operator to select the appropriate entry price: buy orders execute at the Ask price, which is the higher price where the market is willing to sell to you, while sell orders execute at the Bid price, which is the lower price where the market is willing to buy from you. We also retrieve the symbol's point value and digit precision, which we'll need for calculating stop loss and take profit levels."
 
 ```mql5
 //+------------------------------------------------------------------+
@@ -756,6 +822,9 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
 **What is this?** Calculates Stop Loss price if enabled.
 
 **Why?** Protects against excessive losses - crucial risk management.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 23 calculates our stop loss price, which is critical for risk management. We first check if stop loss is enabled by testing if the pips value is greater than zero. If enabled, we convert pips to price distance by multiplying by the point value and by ten, since one pip equals ten points on a five-digit broker. For buy orders, the stop loss goes below the entry price since losses occur when price drops, while for sell orders, it goes above the entry price since losses occur when price rises. Finally, we normalize the price to the correct number of decimal places required by the broker."
 
 ```mql5
    // Calculate Stop Loss if specified (InpStopLossPips > 0)
@@ -796,6 +865,9 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
 
 **Why?** Defines profit target - alternative to trailing with MA exits.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 24 calculates take profit using the exact same logic as stop loss, but in the opposite direction. We convert pips to price distance, then for buy orders, place the take profit above the entry price since profits occur when price rises, while for sell orders, we place it below the entry price since profits occur when price falls. This gives you the flexibility to use fixed profit targets instead of or in addition to the moving average exit rules. Setting take profit to zero means you'll rely entirely on the MA crosses for your exits, letting trends run as long as they remain valid."
+
 ```mql5
    // Calculate Take Profit if specified (InpTakeProfitPips > 0)
    if(InpTakeProfitPips > 0)
@@ -832,6 +904,9 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
 **What is this?** Sends order to broker and logs the outcome.
 
 **Why?** Actually places the trade and provides feedback on success/failure.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 25 completes our OpenTrade function by actually executing the order and logging the result. We call either trade.Buy or trade.Sell depending on the order type, passing in our lot size, symbol, entry price, stop loss, take profit, and trade comment. Both methods return a boolean indicating success or failure. If the trade succeeds, we log comprehensive details including the order type, lot size, and the stop loss and take profit levels, displaying none if they're disabled. If the trade fails, we log the error code and description from the broker, which helps with troubleshooting issues like insufficient margin or invalid parameters."
 
 ```mql5
    // Execute the trade using CTrade object
@@ -884,6 +959,9 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
 
 **Why?** Exit strategy is critical - determines profit/loss outcomes.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 26 introduces our ManageOpenPosition function, which runs every bar while we have an open trade. We first double-check that the position still exists, since it could have been closed by stop loss or take profit hitting. We increment our bars in trade counter, which tracks how long we've been holding the position. Then we retrieve the position type to know if we're managing a buy or sell, get the latest closing price and moving average values from the completed bar, and initialize our exit control variables that will determine whether and why we should close the trade."
+
 ```mql5
 //+------------------------------------------------------------------+
 //| Manage open position                                             |
@@ -930,6 +1008,9 @@ void ManageOpenPosition()
 
 **Why?** When uptrend ends (price crosses below MA), we exit to preserve profits.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 27 checks exit conditions for buy positions based on moving average crosses. If we're in a buy trade and the fast MA exit is enabled, we check if the closing price has dropped below the fast moving average, signaling the uptrend is weakening. Alternatively, if slow MA exit is enabled, we check if price crossed below the slow MA for a later exit that lets trends run longer. These work as an OR condition, meaning either one can trigger the exit. We set the should exit flag and record which condition triggered so we have detailed logging of why each trade closed."
+
 ```mql5
    // Check exit conditions based on position type
    if(posType == POSITION_TYPE_BUY)
@@ -967,6 +1048,9 @@ void ManageOpenPosition()
 **What is this?** Checks if SELL position should exit based on MA crosses.
 
 **Why?** When downtrend ends (price crosses above MA), exit to lock in profits.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 28 implements the sell exit conditions, which mirror the buy logic with inverted comparisons. For sell positions, we're looking for price to cross back above the moving averages, which signals the downtrend is ending. If fast MA exit is enabled and price closes above the fast MA, we trigger an exit. If slow MA exit is enabled and price crosses above the slow MA, that's an alternative exit trigger. This symmetrical structure ensures we treat long and short positions consistently, exiting when the trend that justified our entry begins to reverse."
 
 ```mql5
    else // POSITION_TYPE_SELL
@@ -1006,6 +1090,9 @@ void ManageOpenPosition()
 
 **Why?** Prevents holding positions indefinitely - especially important for losing trades.
 
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 29 adds a time-based exit that forces the position to close after a maximum number of bars, regardless of profit or loss. We check if this feature is enabled by testing if the max bars parameter is greater than zero, then compare our bars in trade counter against that limit. If we've held the position too long, we set the should exit flag and use StringFormat to create a descriptive exit reason that includes the actual bar limit. This is particularly useful for preventing positions from being held indefinitely when the trend stalls, and it can help enforce trading discipline by limiting your exposure time."
+
 ```mql5
    // Time-based exit - force close after max bars
    if(InpMaxBarsInTrade > 0 && barsInTrade >= InpMaxBarsInTrade)
@@ -1034,6 +1121,9 @@ void ManageOpenPosition()
 **What is this?** Closes the position if any exit condition met.
 
 **Why?** Actually closes the trade and logs the result for analysis.
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 30 executes the exit if any of our conditions were triggered. We check the should exit flag, and if it's true, we retrieve the current profit or loss using PositionGetDouble. Then we log comprehensive exit information including the specific reason for closing, the final profit or loss amount, and how many bars we held the trade. Finally, we call trade.PositionClose to close the position at the current market price. This detailed logging is invaluable for post-trade analysis and strategy optimization, helping you understand which exit rules are working best."
 
 ```mql5
    // Execute exit if any condition was met
@@ -1072,6 +1162,9 @@ void ManageOpenPosition()
 ## Part 31: Complete Code Assembly
 
 **Important!** When you assemble all the parts above in order (Part 1 → Part 30), you will have the complete, functional EA. Here's a verification checklist:
+
+### 🎙️ Narration (Text-to-Speech Ready):
+"Part 31 wraps up our tutorial with assembly instructions and verification steps. When you combine all thirty parts in order, from the file header through to the exit logic, you'll have a complete, functional Expert Advisor ready to compile and test. The code totals around 319 lines and includes seven main functions: OnInit for setup, OnDeinit for cleanup, OnTick as the main loop, IsNewBar for candle detection, CheckForEntry for analyzing setups, OpenTrade for order execution, and ManageOpenPosition for exit logic. Before running it, verify that all opening braces have matching closing braces, all parameters are present, and the code structure matches the outline provided. This modular approach makes the EA easy to understand, maintain, and customize for your specific trading needs."
 
 ### Assembly Instructions:
 1. Start with Part 1 (File Header)
