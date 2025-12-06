@@ -1,5 +1,74 @@
 # MQL5 Expert Advisor Tutorial: MA Trend Following Strategy
 
+## Video Introduction Script
+
+### Opening (0:00 - 0:45)
+
+**[On Screen: Welcome back animation, your logo]**
+
+"Hey traders, welcome back to the channel! I know it's been a while, but today I've got something special for you - a **complete Expert Advisor** that we're going to code together from scratch.
+
+This is a **Moving Average Trend Following EA** - simple, but effective. And I highly recommend you follow along step by step, because by the end of this video, you'll understand not just HOW to code in MQL5, but WHY we make certain decisions.
+
+Before we jump in, quick announcements:"
+
+**[On Screen: Discord logo/link animation]**
+
+"If you're looking to connect with other algo traders, discuss strategies, or get help with your code - join our Discord community. Link is in the description below."
+
+**[On Screen: Purchase option graphic]**
+
+"And if you want to skip the coding and get straight to testing this EA, you can purchase the ready-to-use version - also linked in the description."
+
+### Strategy Overview (0:45 - 2:00)
+
+**[On Screen: Chart with MAs animated]**
+
+"Alright, let's talk about what this EA actually does.
+
+**The Core Logic** is beautifully simple:
+
+**Number 1:** We use two Moving Averages - a fast MA and a slow MA - to identify the trend direction.
+
+**Number 2:** We enter a BUY when price is trading above both MAs, confirming an uptrend.
+
+**Number 3:** We enter a SELL when price is below both MAs, confirming a downtrend.
+
+**Number 4:** We exit when price crosses back through our MAs, signaling the trend is weakening.
+
+That's it. No complicated indicators, no machine learning, no magic. Just clean trend-following logic."
+
+**[On Screen: Backtest results montage]**
+
+"Now, you might be thinking - 'Does this actually work?' Let me show you some backtest results..."
+
+**[Show 3-5 slides of backtest stats: equity curve, win rate, profit factor, drawdown]**
+
+"As you can see, on EUR/USD, we're getting a profit factor of [X], with a win rate around [Y]%. The equity curve shows consistent growth with manageable drawdowns. On GBP/USD, similar story - [brief stats]. And this is across multiple years of data."
+
+### Transition to Code (2:00 - 2:20)
+
+**[On Screen: Code editor opening]**
+
+"Obviously, backtest results aren't guarantees - but they show this strategy has edge. Now, the exciting part: let's build this thing.
+
+I've broken down the entire EA into **31 parts**. Each part focuses on one specific concept, so you'll understand every single line of code.
+
+We'll cover:
+- How to set up indicators in MQL5
+- Entry and exit logic
+- Risk management with stop losses
+- Position management
+- And all the best practices you need to know
+
+So grab your coffee, open MetaEditor, and let's code."
+
+**[Fade to Part 1]**
+
+---
+
+## Tutorial Structure
+
 This tutorial breaks down a complete Moving Average Trend Following Expert Advisor (EA) into digestible parts. Each section explains what the code does and why we do it.
 
 ---
