@@ -30,8 +30,8 @@ input int InpMaxBarsInTrade = 0;               // Max bars in trade (0=disabled)
 
 input group "=== Risk Management ==="
 input double InpLotSize = 0.01;                // Fixed lot size
-input double InpStopLossPips = 100;            // Stop Loss in pips (0=disabled)
-input double InpTakeProfitPips = 0;            // Take Profit in pips (0=disabled)
+input double InpStopLossPoints = 1000;         // Stop Loss in points (0=disabled)
+input double InpTakeProfitPoints = 0;          // Take Profit in points (0=disabled)
 
 input group "=== Trading Hours ==="
 input bool InpUseTimeFilter = false;           // Use time filter
@@ -211,9 +211,9 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
 
    // Calculate SL and TP if specified
-   if(InpStopLossPips > 0)
+   if(InpStopLossPoints > 0)
    {
-      double slDistance = InpStopLossPips * point * 10; // pips to price
+      double slDistance = InpStopLossPoints * point;
       if(orderType == ORDER_TYPE_BUY)
          stopLoss = price - slDistance;
       else
@@ -221,9 +221,9 @@ void OpenTrade(ENUM_ORDER_TYPE orderType)
       stopLoss = NormalizeDouble(stopLoss, digits);
    }
 
-   if(InpTakeProfitPips > 0)
+   if(InpTakeProfitPoints > 0)
    {
-      double tpDistance = InpTakeProfitPips * point * 10; // pips to price
+      double tpDistance = InpTakeProfitPoints * point;
       if(orderType == ORDER_TYPE_BUY)
          takeProfit = price + tpDistance;
       else
