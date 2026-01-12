@@ -8,6 +8,10 @@
 
 #include <Trade\Trade.mqh>
 
+//--- Constants
+#define DEFAULT_SLIPPAGE_POINTS 20
+#define DEFAULT_ORDER_FILLING ORDER_FILLING_FOK
+
 //--- Input Parameters
 input group "=== Moving Averages ==="
 input int InpFastMA = 20;                      // Fast MA period
@@ -56,25 +60,52 @@ int barsBelowMA = 0;
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   // Initialize indicators
-   handleFastMA = iMA(_Symbol, PERIOD_CURRENT, InpFastMA, 0, InpMAMethod, InpMAPrice);
-   handleSlowMA = iMA(_Symbol, PERIOD_CURRENT, InpSlowMA, 0, InpMAMethod, InpMAPrice);
+    // Input validation
+    if(InpFastMA <= 0 || InpSlowMA <= 0)
+    {
+       Print("Error: MA periods must be greater than 0");
+       return INIT_FAILED;
+    }
+    
+    if(InpFastMA >= InpSlowMA)
+    {
+       Print("Warning: Fast MA period should be smaller than Slow MA period");
+    }
+    
+    if(InpLotSize <= 0)
+    {
+       Print("Error: Lot size must be greater than 0");
+       return INIT_FAILED;
+    }
+    
+    // Validate lot size against symbol limits
+    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+    double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+    if(InpLotSize < minLot || InpLotSize > maxLot)
+    {
+       Print("Error: Lot size ", InpLotSize, " is outside symbol limits (", minLot, "-", maxLot, ")");
+       return INIT_FAILED;
+    }
+    
+    // Initialize indicators
+    handleFastMA = iMA(_Symbol, PERIOD_CURRENT, InpFastMA, 0, InpMAMethod, InpMAPrice);
+    handleSlowMA = iMA(_Symbol, PERIOD_CURRENT, InpSlowMA, 0, InpMAMethod, InpMAPrice);
 
-   if(handleFastMA == INVALID_HANDLE || handleSlowMA == INVALID_HANDLE)
-   {
-      Print("Failed to create indicators");
-      return INIT_FAILED;
-   }
+    if(handleFastMA == INVALID_HANDLE || handleSlowMA == INVALID_HANDLE)
+    {
+       Print("Failed to create indicators");
+       return INIT_FAILED;
+    }
 
    // Set arrays as series
    ArraySetAsSeries(fastMABuffer, true);
    ArraySetAsSeries(slowMABuffer, true);
 
-   // Configure trade object
-   trade.SetExpertMagicNumber(InpMagicNumber);
-   trade.SetDeviationInPoints(20);
-   trade.SetTypeFilling(ORDER_FILLING_FOK);
-   trade.SetAsyncMode(false);
+// Configure trade object
+    trade.SetExpertMagicNumber(InpMagicNumber);
+    trade.SetDeviationInPoints(DEFAULT_SLIPPAGE_POINTS);
+    trade.SetTypeFilling(DEFAULT_ORDER_FILLING);
+    trade.SetAsyncMode(false);
 
    Print("MA Trend Follower initialized - Fast MA: ", InpFastMA, " Slow MA: ", InpSlowMA);
    return INIT_SUCCEEDED;
@@ -112,14 +143,27 @@ void OnTick()
    // Reset trade counter if no position
    barsInTrade = 0;
 
-   // Time filter
-   if(InpUseTimeFilter)
-   {
-      MqlDateTime dt;
-      TimeToStruct(TimeCurrent(), dt);
-      if(dt.hour < InpStartHour || dt.hour >= InpEndHour)
-         return;
-   }
+// Time filter (supports overnight sessions)
+    if(InpUseTimeFilter)
+    {
+       MqlDateTime dt;
+       TimeToStruct(TimeCurrent(), dt);
+       
+       // Handle time sessions that cross midnight
+       if(InpStartHour < InpEndHour)
+       {
+          // Same day session (e.g., 8:00-20:00)
+          if(dt.hour < InpStartHour || dt.hour >= InpEndHour)
+             return;
+       }
+       else
+       {
+          // Overnight session (e.g., 22:00-06:00)
+          // Allow trading if hour >= start OR hour < end
+          if(dt.hour < InpEndHour && dt.hour >= InpStartHour)
+             return;
+       }
+    }
 
    // Check for trend entry
    CheckForEntry();
@@ -202,13 +246,28 @@ void CheckForEntry()
 //+------------------------------------------------------------------+
 void OpenTrade(ENUM_ORDER_TYPE orderType)
 {
-   double price = (orderType == ORDER_TYPE_BUY) ?
-                  SymbolInfoDouble(_Symbol, SYMBOL_ASK) :
-                  SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    // Get symbol prices with error checking
+    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    
+    if(ask <= 0 || bid <= 0)
+    {
+       Print("Error: Invalid symbol prices - Ask: ", ask, " Bid: ", bid);
+       return;
+    }
+    
+    double price = (orderType == ORDER_TYPE_BUY) ? ask : bid;
 
-   double stopLoss = 0, takeProfit = 0;
-   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+    double stopLoss = 0, takeProfit = 0;
+    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+    
+    // Validate symbol info
+    if(point <= 0 || digits <= 0)
+    {
+       Print("Error: Invalid symbol info - Point: ", point, " Digits: ", digits);
+       return;
+    }
 
    // Calculate SL and TP if specified
    if(InpStopLossPoints > 0)
@@ -260,42 +319,50 @@ void ManageOpenPosition()
 
    barsInTrade++;
 
-   // Get position info
-   long posType = PositionGetInteger(POSITION_TYPE);
-   double close = iClose(_Symbol, PERIOD_CURRENT, 1);
-   double fastMA = fastMABuffer[1];
-   double slowMA = slowMABuffer[1];
+// Get position info
+    long posType = PositionGetInteger(POSITION_TYPE);
+    double close = iClose(_Symbol, PERIOD_CURRENT, 1);
+    
+    // Array bounds check before accessing buffer[1]
+    if(ArraySize(fastMABuffer) < 2 || ArraySize(slowMABuffer) < 2)
+    {
+       Print("Error: MA buffers not properly initialized");
+       return;
+    }
+    
+    double fastMA = fastMABuffer[1];
+    double slowMA = slowMABuffer[1];
 
    bool shouldExit = false;
    string exitReason = "";
 
-   // Check MA break exit
-   if(posType == POSITION_TYPE_BUY)
-   {
-      if(InpExitOnFastMA && close < fastMA)
-      {
-         shouldExit = true;
-         exitReason = "Close below Fast MA";
-      }
-      else if(InpExitOnSlowMA && close < slowMA)
-      {
-         shouldExit = true;
-         exitReason = "Close below Slow MA";
-      }
-   }
-   else // POSITION_TYPE_SELL
-   {
-      if(InpExitOnFastMA && close > fastMA)
-      {
-         shouldExit = true;
-         exitReason = "Close above Fast MA";
-      }
-      else if(InpExitOnSlowMA && close > slowMA)
-      {
-         shouldExit = true;
-         exitReason = "Close above Slow MA";
-      }
-   }
+// Check MA break exit
+    if(posType == POSITION_TYPE_BUY)
+    {
+       if(InpExitOnFastMA && close < fastMA)
+       {
+          shouldExit = true;
+          exitReason = "Close below Fast MA";
+       }
+       if(InpExitOnSlowMA && close < slowMA)
+       {
+          shouldExit = true;
+          exitReason = "Close below Slow MA";
+       }
+    }
+    else // POSITION_TYPE_SELL
+    {
+       if(InpExitOnFastMA && close > fastMA)
+       {
+          shouldExit = true;
+          exitReason = "Close above Fast MA";
+       }
+       if(InpExitOnSlowMA && close > slowMA)
+       {
+          shouldExit = true;
+          exitReason = "Close above Slow MA";
+       }
+    }
 
    // Time-based exit
    if(InpMaxBarsInTrade > 0 && barsInTrade >= InpMaxBarsInTrade)
@@ -304,15 +371,24 @@ void ManageOpenPosition()
       exitReason = StringFormat("Max bars in trade (%d)", InpMaxBarsInTrade);
    }
 
-   // Execute exit
-   if(shouldExit)
-   {
-      double profit = PositionGetDouble(POSITION_PROFIT);
-      Print("=== CLOSING POSITION ===");
-      Print("Reason: ", exitReason, " | Profit: ", DoubleToString(profit, 2),
-            " | Bars in trade: ", barsInTrade);
-      trade.PositionClose(_Symbol);
-   }
+// Execute exit
+    if(shouldExit)
+    {
+       double profit = PositionGetDouble(POSITION_PROFIT);
+       Print("=== CLOSING POSITION ===");
+       Print("Reason: ", exitReason, " | Profit: ", DoubleToString(profit, 2),
+             " | Bars in trade: ", barsInTrade);
+       
+       bool closeResult = trade.PositionClose(_Symbol);
+       if(!closeResult)
+       {
+          Print("Error closing position: ", trade.ResultRetcode(), " - ", trade.ResultRetcodeDescription());
+       }
+       else
+       {
+          Print("Position closed successfully");
+       }
+    }
 }
 
 //+------------------------------------------------------------------+
